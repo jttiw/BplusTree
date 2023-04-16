@@ -18,9 +18,9 @@ pub struct BFA {
 impl BFA {
     pub fn new(block_size: usize, dir: &str, filestr: &str ) -> BFA {
         //setting up file paths
-        let filepath = format!("{}\\{}", dir, filestr);
-        let updatepath = format!("{}\\{}update", dir, filestr);
-        let metadatapath = format!("{}\\{}metadata", dir, filestr);
+        let filepath = format!("{}/{}", dir, filestr);
+        let updatepath = format!("{}/{}update", dir, filestr);
+        let metadatapath = format!("{}/{}metadata", dir, filestr);
         //read and write permissions
         match OpenOptions::new()
             .read(true)
@@ -87,6 +87,7 @@ impl BFA {
 
             //new file
             _ => {
+                #[allow(unused_assignments)]
                 let mut file = File::create(&filepath).expect("file creation failed");
 
                 file = OpenOptions::new()
@@ -114,7 +115,7 @@ impl BFA {
         }
     }
 
-    //get bytes from index id to a block
+    //get the id-th Block in the File
     pub fn get(&mut self, id: usize) -> Option<Block>{
         if self.update_file[id] {
             let mut vec:Vec<u8> = vec![0; self.block_size];
@@ -270,55 +271,55 @@ mod tests {
 
     #[test]
     fn test_bfa_put_ok() {
-        let mut file = File::create("tests\\test_bfa_put_ok").expect("test_bfa_put_ok failed");
+        let mut file = File::create("tests/test_bfa_put_ok").expect("test_bfa_put_ok failed");
         file.write_all(b"Hello World!").expect("test_bfa_put_ok failed");
         let mut bfa_1 = BFA::new(6, "tests","test_bfa_put_ok");
         let block_1 = bfa_1.get(0).unwrap();
         let block_2 = bfa_1.get(1).unwrap();
         let a = bfa_1.reserve();
         let b = bfa_1.reserve();
-        bfa_1.update(a, block_2);
-        bfa_1.update(b, block_1);
+        bfa_1.update(a, block_2).unwrap();
+        bfa_1.update(b, block_1).unwrap();
 
         let mut b = String::new();
-        bfa_1.file.seek(SeekFrom::Start(0));
-        bfa_1.file.read_to_string(& mut b);
+        bfa_1.file.seek(SeekFrom::Start(0)).unwrap();
+        bfa_1.file.read_to_string(& mut b).unwrap();
         assert_eq!(b, "Hello World!World!Hello ".to_string());
     }
 
     #[test]
     fn test_bfa_put_fail() {
-        let mut file = File::create("tests\\test_bfa_put_fail").expect("test_bfa_put_ok failed");
+        let mut file = File::create("tests/test_bfa_put_fail").expect("test_bfa_put_ok failed");
         file.write_all(b"Hello World!").expect("test_bfa_put_ok failed");
         let mut bfa_1 = BFA::new(6, "tests", "test_bfa_put_fail");
         let block_1 = bfa_1.get(0).unwrap();
         let block_2 = bfa_1.get(1).unwrap();
         let a = bfa_1.reserve();
         let b = bfa_1.reserve();
-        bfa_1.update(a, block_2);
-        bfa_1.update(b, block_1);
+        bfa_1.update(a, block_2).unwrap();
+        bfa_1.update(b, block_1).unwrap();
 
         let mut b = String::new();
-        bfa_1.file.seek(SeekFrom::Start(0));
-        bfa_1.file.read_to_string(& mut b);
+        bfa_1.file.seek(SeekFrom::Start(0)).unwrap();
+        bfa_1.file.read_to_string(& mut b).unwrap();
         assert_ne!(b, "Hello World!Hello World!".to_string());
     }
 
     #[test]
     fn test_bfa_get_ok() {
-        let mut file = File::create("tests\\test_bfa_get_ok").expect("test_bfa_put_ok failed");
+        let mut file = File::create("tests/test_bfa_get_ok").expect("test_bfa_put_ok failed");
         file.write_all(b"Hello World!").expect("test_bfa_put_ok failed");
         let mut bfa_1 = BFA::new(8, "tests","test_bfa_get_ok");
-        let mut block = bfa_1.get(0).unwrap();
+        let block = bfa_1.get(0).unwrap();
         assert_eq!(block.contents, [72, 101, 108, 108, 111, 32, 87, 111]);
     }
 
     #[test]
     fn test_bfa_get_fail() {
-        let mut file = File::create("tests\\test_bfa_get_fail").expect("test_bfa_put_ok failed");
+        let mut file = File::create("tests/test_bfa_get_fail").expect("test_bfa_put_ok failed");
         file.write_all(b"Hello World!").expect("test_bfa_put_ok failed");
         let mut bfa_1 = BFA::new(8, "tests","test_bfa_get_fail");
-        let mut block = bfa_1.get(0).unwrap();
+        let block = bfa_1.get(0).unwrap();
         assert_ne!(block.contents, [72, 101, 108, 108, 111, 32, 87, 101]);
     }
 }

@@ -28,8 +28,8 @@ pub struct InnerElement<T: Ord> {
 
 #[derive(Debug, Deserialize, Serialize,Clone)]
 pub struct LeafElement<T: Ord, V: Sized> {
-    pub comp: T, // wegbeschreibend
-    pub data: V  // referenz auf knoten
+    pub comp: T,
+    pub data: V
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -39,7 +39,7 @@ pub enum Node<T: Ord, V: Sized> {
     },
     LeafNode {
         content: Vec<LeafElement<T, V>>,
-        l_ref: i64,
+        l_ref: i64,     // -1 if non-existent
         r_ref: i64,
     },
 }
@@ -552,6 +552,7 @@ impl BTree {
         }
     }
 
+    //Print the Structure of Tree for Debugging -> x is a Decoy Element to Determine the Type of Data -> surely a more elegant solution exists
     pub fn print<T, V>(&mut self, x : &T, data: V)
         where T: Serialize + DeserializeOwned + Debug + Ord + Copy + Clone,
               V: Serialize + DeserializeOwned + Debug + Sized + Clone {
