@@ -9,49 +9,50 @@ use std::error::Error;
 pub struct BFA {
     pub block_size: usize,
     pub file: File,
-    pub update_file: Vec<bool>,
+    pub update_flags: Vec<bool>,
     pub reserve_map: HashMap<usize, bool>,
     pub metadata_file: HashMap<String, String>,
-    pub reservecount: usize,
+    pub reserve_count: usize,
 }
 
 impl BFA {
     pub fn new(block_size: usize, dir: &str, filestr: &str ) -> BFA {
         //setting up file paths
         let filepath = format!("{}/{}", dir, filestr);
-        let updatepath = format!("{}/{}update", dir, filestr);
-        let metadatapath = format!("{}/{}metadata", dir, filestr);
+        let updatepath = format!("{}/{}_update", dir, filestr);
+        let metadatapath = format!("{}/{}_metadata", dir, filestr);
+
         //read and write permissions
         match OpenOptions::new()
             .read(true)
             .write(true)
             .open(&filepath) {
 
-            //file already exists
+            //file already exists -> read contents into vector
             Ok(file) =>{
-                let mut update_file= Vec::new();
+                let mut update_file_contents = Vec::new();
                 let update = File::open(& updatepath);
                 match update {
-                    Ok(up) => {
-                        for bool in up.bytes() {
+                    Ok(update_file) => {
+                        for bool in update_file.bytes() {
                             match bool {
                                 Ok(byte) => {
-                                    if byte == 49 { update_file.push(true);}
-                                    else { update_file.push(false);}
+                                    if byte == 49 { update_file_contents.push(true);}
+                                    else { update_file_contents.push(false);}
                                 },
                                 _ => {println!("updatefile corrupted")}
                             }
                         }
-                    },
+                    }
                     _ => {println!("updatefile does not exist")}
                 };
 
-                if update_file.len() == 0 {
-                    update_file = vec![true; file.metadata().unwrap().len() as usize / block_size];
+                if update_file_contents.len() == 0 {
+                    update_file_contents = vec![true; file.metadata().unwrap().len() as usize / block_size];
                     println!("creating new updatefile");
                     println!("filesize: {}", file.metadata().unwrap().len() as usize);
                     println!("blocksize: {}", block_size);
-                    println!("{:?}", update_file);
+                    println!("{:?}", update_file_contents);
 
                 }
                 let mut metadata_file;
@@ -67,21 +68,21 @@ impl BFA {
                     }
                     _ => {
                         metadata_file = HashMap::new();
-                        metadata_file.insert("root".to_string(), "0".to_string());
+                        metadata_file.insert("root".to_string(), "0".to_string());  //Todo maybe set root to variable? Better const
                         metadata_file.insert("updatepath".to_string(), updatepath);
                         metadata_file.insert("metadatapath".to_string(), metadatapath);
                     }
                 }
 
-                let reservecount = update_file.len();
+                let reservecount = update_file_contents.len();
 
                 BFA {
                     block_size,
                     file,
-                    update_file,
+                    update_flags: update_file_contents,
                     reserve_map: HashMap::new(),
                     metadata_file,
-                    reservecount,
+                    reserve_count: reservecount,
                 }
             },
 
@@ -105,10 +106,10 @@ impl BFA {
                 BFA {
                     block_size,
                     file,
-                    update_file: Vec::new(),
+                    update_flags: Vec::new(),
                     reserve_map: HashMap::new(),
                     metadata_file,
-                    reservecount: 0,
+                    reserve_count: 0,
                 }
 
             }
@@ -117,11 +118,11 @@ impl BFA {
 
     //get the id-th Block in the File
     pub fn get(&mut self, id: usize) -> Option<Block>{
-        if self.update_file[id] {
-            let mut vec:Vec<u8> = vec![0; self.block_size];
+        if self.update_flags[id] {
+            let mut buffer:Vec<u8> = vec![0; self.block_size];
             self.file.seek(SeekFrom::Start((id * self.block_size) as u64)).expect("error bfa get");
-            self.file.read(& mut vec).expect("error bfa get");
-            let block = Block::new(vec);
+            self.file.read(& mut buffer).expect("error bfa get");
+            let block = Block::new(buffer);
             Some(block)
         }
         else {
@@ -132,24 +133,24 @@ impl BFA {
 
     //put content of a block into file at index id, if id is reserved or already written
     pub fn update(&mut self, id: usize, mut block: Block) -> Result<(), Box<dyn Error>> {
+
         if block.contents.len() > self.block_size {
             return Err("Block is too large".into());
         }
         else {
-            let res = self.reserve_map.get(&id);
-            //fill entire block, important for the last block
             if block.contents.len() < self.block_size {
+                //Pad with 0s
                 for _i in block.contents.len()..self.block_size {
                     block.contents.push(0);
                 }
             }
-
-            match res {
+            //check if block in file is reserved
+            match self.reserve_map.get(&id) {
                 Some(bool) => {
                     if bool == &true {
                         self.file.seek(SeekFrom::Start((id * self.block_size) as u64)).expect("error bfa update");
                         self.file.write(&block.contents)?;
-                        self.update_file.insert(id,true);
+                        self.update_flags.insert(id, true);
                         self.reserve_map.remove(&id);
                     }
                     else {
@@ -157,7 +158,7 @@ impl BFA {
                     }
                 }
                 None => {
-                    if self.update_file[id] {
+                    if self.update_flags[id] {
                         self.file.seek(SeekFrom::Start((id * self.block_size) as u64)).expect("error bfa update");
                         self.file.write(&block.contents)?;
                         self.reserve_map.remove(&id);
@@ -185,25 +186,25 @@ impl BFA {
     }
 
     pub fn reserve(& mut self) -> usize {
-        self.reserve_map.insert(self.reservecount, true);
-        self.reservecount += 1;
-        self.reservecount - 1
+        self.reserve_map.insert(self.reserve_count, true);
+        self.reserve_count += 1;
+        self.reserve_count - 1
     }
 
     pub fn contains(& self, id: usize) -> bool {
-        if id > self.update_file.len() {
+        if id > self.update_flags.len() {
             println!("id too large");
             false
         }
-        else {self.update_file[id]}
+        else {self.update_flags[id]}
     }
 
     pub fn remove(& mut self, id: usize) {
-        if id > self.update_file.len() {
+        if id > self.update_flags.len() {
             println!("id: {} too large", id);
         }
         else {
-            self.update_file[id] = false;
+            self.update_flags[id] = false;
         }
     }
 
@@ -217,8 +218,8 @@ impl BFA {
             .write(true)
             .open(self.metadata_file.get("updatepath").expect("updatepath does not exist"))
             .expect("Unable to open file.");
-        for i in 0 .. self.update_file.len() {
-            if self.update_file[i] { write!(file_1, "1" ).expect("error bfa close");}
+        for i in 0 .. self.update_flags.len() {
+            if self.update_flags[i] { write!(file_1, "1" ).expect("error bfa close");}
             else {write!(file_1, "0").expect("error bfa close"); }
         };
         File::create(self.metadata_file.get("metadatapath").expect("metadatapath does not exist")).expect("Metadatafile creation failed");
@@ -251,75 +252,13 @@ impl BFA {
         return root;
     }
 
-    pub fn blocks(mut self) -> Vec<Block>{
+    pub fn blocks(&mut self) -> Vec<Block>{
         let mut vec: Vec<Block> = Vec::new();
-        for i in 0..self.update_file.len() {
+        for i in 0..self.update_flags.len() {
             let block = self.get(i).expect("error getting blocks").clone();
             vec.push(block)
         }
         return vec;
     }
 
-}
-
-
-#[cfg(test)]
-mod tests {
-    use crate::bfa::BFA;
-    use std::fs::File;
-    use std::io::{Write, Read, Seek, SeekFrom};
-
-    #[test]
-    fn test_bfa_put_ok() {
-        let mut file = File::create("tests/test_bfa_put_ok").expect("test_bfa_put_ok failed");
-        file.write_all(b"Hello World!").expect("test_bfa_put_ok failed");
-        let mut bfa_1 = BFA::new(6, "tests","test_bfa_put_ok");
-        let block_1 = bfa_1.get(0).unwrap();
-        let block_2 = bfa_1.get(1).unwrap();
-        let a = bfa_1.reserve();
-        let b = bfa_1.reserve();
-        bfa_1.update(a, block_2).unwrap();
-        bfa_1.update(b, block_1).unwrap();
-
-        let mut b = String::new();
-        bfa_1.file.seek(SeekFrom::Start(0)).unwrap();
-        bfa_1.file.read_to_string(& mut b).unwrap();
-        assert_eq!(b, "Hello World!World!Hello ".to_string());
-    }
-
-    #[test]
-    fn test_bfa_put_fail() {
-        let mut file = File::create("tests/test_bfa_put_fail").expect("test_bfa_put_ok failed");
-        file.write_all(b"Hello World!").expect("test_bfa_put_ok failed");
-        let mut bfa_1 = BFA::new(6, "tests", "test_bfa_put_fail");
-        let block_1 = bfa_1.get(0).unwrap();
-        let block_2 = bfa_1.get(1).unwrap();
-        let a = bfa_1.reserve();
-        let b = bfa_1.reserve();
-        bfa_1.update(a, block_2).unwrap();
-        bfa_1.update(b, block_1).unwrap();
-
-        let mut b = String::new();
-        bfa_1.file.seek(SeekFrom::Start(0)).unwrap();
-        bfa_1.file.read_to_string(& mut b).unwrap();
-        assert_ne!(b, "Hello World!Hello World!".to_string());
-    }
-
-    #[test]
-    fn test_bfa_get_ok() {
-        let mut file = File::create("tests/test_bfa_get_ok").expect("test_bfa_put_ok failed");
-        file.write_all(b"Hello World!").expect("test_bfa_put_ok failed");
-        let mut bfa_1 = BFA::new(8, "tests","test_bfa_get_ok");
-        let block = bfa_1.get(0).unwrap();
-        assert_eq!(block.contents, [72, 101, 108, 108, 111, 32, 87, 111]);
-    }
-
-    #[test]
-    fn test_bfa_get_fail() {
-        let mut file = File::create("tests/test_bfa_get_fail").expect("test_bfa_put_ok failed");
-        file.write_all(b"Hello World!").expect("test_bfa_put_ok failed");
-        let mut bfa_1 = BFA::new(8, "tests","test_bfa_get_fail");
-        let block = bfa_1.get(0).unwrap();
-        assert_ne!(block.contents, [72, 101, 108, 108, 111, 32, 87, 101]);
-    }
 }

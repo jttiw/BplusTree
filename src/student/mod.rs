@@ -40,6 +40,7 @@ impl StudentList {
     pub fn add(& mut self, student: Student) {
         self.liste.push(student);
     }
+
      pub fn from_block(block: & mut Block) -> Self {
          println!("{:?}", block.contents);
          let back = bincode::deserialize(block.contents.as_slice()).unwrap();

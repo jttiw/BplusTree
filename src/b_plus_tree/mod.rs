@@ -1,165 +1,24 @@
+use crate::node::Node;
+use crate::inner_element::InnerElement;
+use crate::leaf_element::LeafElement;
 use crate::block::Block;
-use std::fmt;
-use serde::Deserialize;
 use crate::bfa::BFA;
+
+
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use std::fmt::Debug;
+use std::fmt::{Debug, Error};
 use std::mem::size_of_val;
 
-pub struct BTreeError;
-
-impl fmt::Display for BTreeError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "already in tree")
-    }
-}
-impl fmt::Debug for BTreeError { //todo
-fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    write!(f, "{{ file: {}, line: {} }}", file!(), line!()) // programmer-facing output
-}
-}
-
-#[derive(Debug, Deserialize, Serialize,Clone, Copy)]
-pub struct InnerElement<T: Ord> {
-    pub comp: T, // wegbeschreibend
-    pub id: usize  // referenz auf knoten
-}
-
-#[derive(Debug, Deserialize, Serialize,Clone)]
-pub struct LeafElement<T: Ord, V: Sized> {
-    pub comp: T,
-    pub data: V
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub enum Node<T: Ord, V: Sized> {
-    InnerNode {
-      content: Vec<InnerElement<T>>
-    },
-    LeafNode {
-        content: Vec<LeafElement<T, V>>,
-        l_ref: i64,     // -1 if non-existent
-        r_ref: i64,
-    },
-}
 
 pub struct BTree {
     pub root_id:usize,
     pub bfa:BFA,
-    pub max:usize,
-}
-
-impl <T: Ord> InnerElement<T> {
-    pub fn new(comp: T, id: usize) -> Self {
-        InnerElement {
-            comp,
-            id
-        }
-    }
-}
-
-impl <T: Ord, V: Sized> LeafElement<T, V> {
-    pub fn new(comp: T, data: V)-> Self{
-        LeafElement {
-            comp,
-            data
-        }
-    }
-}
-
-impl <T, V> Node<T, V> where T: Ord + Debug, V: Sized + Debug {
-
-    pub fn from_block(block: & mut Block) -> Self where T: DeserializeOwned, V: DeserializeOwned {
-        let node = bincode::deserialize(block.contents.as_slice());
-        return node.expect("error node from block")
-    }
-
-    pub fn get_inner_content(&mut self) -> Option<&mut Vec<InnerElement<T>>> {
-        match self {
-            Node::InnerNode {content} => {
-                return Some(content);
-            }
-            Node::LeafNode {content: _, l_ref:_, r_ref:_} => {
-                return None;
-            }
-        }
-    }
-
-    pub fn get_leaf_content(&mut self) -> Option<&mut Vec<LeafElement<T, V>>> {
-        match self {
-            Node::InnerNode {content: _} => {
-                return None;
-            }
-            Node::LeafNode {content, l_ref: _, r_ref:_} => {
-                return Some(content);
-            }
-        }
-    }
-
-    pub fn get_lref(&mut self) -> Option<i64> {
-        match self {
-            Node::InnerNode {content: _} => {
-                return None;
-            }
-            Node::LeafNode {content:_, l_ref, r_ref:_ } => {
-                return Some(*l_ref);
-            }
-        }
-    }
-
-    pub fn get_rref(&mut self) -> Option<i64> {
-        match self {
-            Node::InnerNode {content: _ } => {
-                return None;
-            }
-            Node::LeafNode {content: _, l_ref: _, r_ref} => {
-                return Some(*r_ref);
-            }
-        }
-    }
-
-    pub fn set_lref(&mut self, id: i64) {
-        match self {
-            Node::InnerNode {content: _ } => {
-            }
-            Node::LeafNode {content: _, ref mut l_ref, r_ref: _ } => {
-               *l_ref = id;
-            }
-        }
-    }
-
-    pub fn set_rref(&mut self, id: i64) {
-        match self {
-            Node::InnerNode {content: _ } => {
-            }
-            Node::LeafNode {content: _, l_ref: _, ref mut r_ref} => {
-                *r_ref = id;
-            }
-        }
-    }
-
-    pub fn set_leaf_content(&mut self, new_content: Vec<LeafElement<T, V>>) {
-        match self {
-            Node::InnerNode {content: _ } => {
-            }
-            Node::LeafNode {content, l_ref: _, r_ref: _ } => {
-                *content = new_content;
-            }
-        }
-    }
-    pub fn set_inner_content(&mut self, new_content: Vec<InnerElement<T>>) {
-        match self {
-            Node::InnerNode {content} => {
-                *content = new_content;
-            }
-            Node::LeafNode {content: _ , l_ref: _ , r_ref: _ } => {
-            }
-        }
-    }
+    pub max:usize,  //maximum Number of Elements per Node
 }
 
 impl BTree {
+    //constructor- creates BFA
     pub fn new(block_size: usize, dir: &str, filestr: &str) -> BTree {
         let bfa = BFA::new(block_size, dir, filestr);
         BTree{
@@ -195,11 +54,23 @@ impl BTree {
         }
 
     }
-    //for testing purposes
-    pub fn traverse<T :Ord,V>(&mut self, given : usize, data: V, mut result: Vec<T>) -> Option<Vec<T>>
+    //for testing purposes:
+    // Traverse Tree in pre-Order
+    // Maybe in the future (starting from @param given Node, writing all traversed Comparators to a Vector) -> this is buggy
+    // always start with root_id -> btree.tarverse(btree.root_id)
+    pub fn traverse<T :Ord,V>(&mut self) -> Option<Vec<T>>
         where T: DeserializeOwned + Debug + Copy ,
-              V: DeserializeOwned + Debug + Clone{
-        let tmp: Node<T,V> = Node::from_block(&mut self.bfa.get(given).expect("traverse error"));
+              V: DeserializeOwned + Debug + Clone {
+
+        self.traverse_internal::<T,V>(self.root_id)
+    }
+    //need @param given for recursion
+    pub fn traverse_internal<T :Ord,V>(&mut self, given : usize) -> Option<Vec<T>>
+        where T: DeserializeOwned + Debug + Copy ,
+              V: DeserializeOwned + Debug + Clone {
+
+        let mut result : Vec<T> = Vec::new();
+        let tmp: Node<T,V> = Node::from_block(&mut self.bfa.get(given).expect("from_block error"));
         match tmp {
             Node::LeafNode {content, l_ref: _, r_ref: _} => {
                 for i in 0..content.len() {
@@ -209,8 +80,7 @@ impl BTree {
             Node::InnerNode{content} => {
                 for i in 0..content.len() {
                     result.push(content.get(i).unwrap().comp.clone());
-                    let ba:Vec<T> = Vec::new();
-                    let mut v :Vec<T> = self.traverse(content.get(i).unwrap().id, data.clone(),ba).unwrap();
+                    let mut v :Vec<T> = self.traverse_internal::<T, V>(content.get(i).unwrap().id).unwrap();
                     result.append(&mut v);
 
                 }
@@ -226,45 +96,9 @@ impl BTree {
         return data;
     }
 
-    fn search_interval_internal<T, V> (&mut self, start: T, end: T, given: usize, mut result: Vec<V>) -> Option<Vec<V>>
-        where T: DeserializeOwned + Debug + Ord,
-              V: DeserializeOwned + Debug + Sized + Clone {
-
-        let tmp: Node<T, V> = Node::from_block(&mut self.bfa.get(given).expect("error search internal"));
-        match tmp {
-            Node::LeafNode {content, l_ref: _, r_ref} => {
-                for i in 0..content.len() {
-                    let element = content.get(i).expect("error search internal");
-                    if element.comp >= start && element.comp <= end {
-                        result.push(element.data.clone());
-                    }
-                }
-                if content.last().unwrap().comp <= end {
-                    if r_ref < 0 {
-                        return Some(result);
-                    }
-                    else {
-                        return self.search_interval_internal(start,end,r_ref as usize, result);
-                    }
-                }
-                else {
-                    return Some(result);
-                }
-            }
-            Node::InnerNode{content} => {
-                for i in content {
-                    if i.comp >= start {
-                        return self.search_interval_internal(start,end, i.id, result);
-                    }
-                }
-            }
-        }
-        None
-    }
-
     //search x
     //first call -> given = BTree.root_id
-    // prints out passed nodes + el for debug purposes
+    // prints out passed Nodes + el for debug purposes
     fn search_internal<T, V> (&mut self, x: T, given: usize) -> Option<V>
         where T: DeserializeOwned + Debug + Ord,
               V: DeserializeOwned + Debug + Sized {
@@ -288,16 +122,52 @@ impl BTree {
         None
     }
 
-    pub fn insert<T, V>(&mut self, key: T, value: V) -> Result<(),BTreeError>
+    fn search_interval_internal<T, V> (&mut self, start: T, end: T, given: usize, mut result: Vec<V>) -> Option<Vec<V>>
+        where T: DeserializeOwned + Debug + Ord,
+              V: DeserializeOwned + Debug + Sized + Clone {
+
+        let tmp: Node<T, V> = Node::from_block(&mut self.bfa.get(given).expect("error search internal"));
+        match tmp {
+            Node::LeafNode {content, l_ref: _, r_ref} => {
+                for i in 0..content.len() {
+                    let element = content.get(i).expect("error search internal");
+                    if element.comp >= start && element.comp <= end {
+                        result.push(element.data.clone());
+                    }
+                }
+                if content.last().unwrap().comp <= end {
+                    match r_ref {
+                        None=> return Some(result),
+                        Some(pointer)=> return self.search_interval_internal(start,end,pointer, result)
+                    }
+                }
+                else {
+                    return Some(result);
+                }
+            }
+            Node::InnerNode{content} => {
+                for i in content {
+                    if i.comp >= start {
+                        return self.search_interval_internal(start,end, i.id, result);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+
+    pub fn insert<T, V>(&mut self, key: T, value: V) -> Result<(), Error>
         where T: Serialize + DeserializeOwned + Debug + Ord + Copy + Clone,
               V: Serialize + DeserializeOwned + Debug + Sized + Clone {
-        if self.bfa.reservecount == 0 && self.max == 0 {
+
+        if self.bfa.reserve_count == 0 && self.max == 0 {
             let value_size = size_of_val(&value);
             let key_size = size_of_val(&key);
-            //bincode need ~32 bytes for the information from leafnode and 16 bytes for the calculation of the sizes of comp and value
+            //bincode need ~32 bytes for the information from leafNode and 16 bytes for the calculation of the sizes of comp and value
             let max = (self.bfa.block_size - 32) / (value_size + key_size + 16);
             self.set_max(max);
-            let mut node: Node<T, V> = Node::LeafNode{content: Vec::new(), l_ref: -1, r_ref: -1};
+            let mut node: Node<T, V> = Node::LeafNode{content: Vec::new(), l_ref: None, r_ref: None};
             let block = Block::to_block(&mut node);
             self.bfa.insert(block);
         }
@@ -306,7 +176,7 @@ impl BTree {
         match search {
             Some(_val) => {
                 println!("comp {:?} already exists", &key);
-                return Err(BTreeError);
+                return Err(Error);
             }
             None => {
                 let element = LeafElement::new(key, value);
@@ -321,9 +191,10 @@ impl BTree {
     //first call : given = Node::ROOT_ID
     //passed : alle traversiert Nodes
     //update : alle veränderten Nodes -> Blöcke müssen geupdatet werden
-    fn b_tree_insert<T, V> (&mut self, element: LeafElement<T, V>, given: usize, mut passed: Vec<usize>) -> Result<(), BTreeError>
+    fn b_tree_insert<T, V> (&mut self, element: LeafElement<T, V>, given: usize, mut passed: Vec<usize>) -> Result<(), Error>
         where T: Serialize + DeserializeOwned + Debug + Ord + Copy + Clone,
               V: Serialize + DeserializeOwned + Debug + Sized + Clone {
+
         let tmp: Node<T, V> = Node::from_block(&mut self.bfa.get(given).unwrap());
         match tmp {
             Node::LeafNode {mut content, l_ref, r_ref} => {
@@ -331,32 +202,32 @@ impl BTree {
                     if &element.comp < &content.get(i).unwrap().comp {
                         if &content.len() < &self.max {
                             content.insert(i, element);
-                            let mut new_tmp = Node::LeafNode {content: content, l_ref: l_ref, r_ref: r_ref};
+                            let mut new_tmp = Node::LeafNode {content, l_ref, r_ref };
                             let tmp_block = Block::to_block( &mut new_tmp);
                             self.bfa.update(given, tmp_block).expect("error b_tree_insert");
                             return Ok(());
                         }
-                        else { // falls node voll
+                        else { // falls Node voll
                             self.split_leaf(element.clone(), passed, element.data.clone());
-                            //self.split_node(Some(element.clone()), None, &mut passed, element.data.clone());
+                            //self.split_Node(Some(element.clone()), None, &mut passed, element.data.clone());
                             return Ok(());
                         }
                     }
                     else if element.comp == content.get(i).unwrap().comp {
-                        return Err(BTreeError);
+                        return Err(Error);
                     }
                 }
-                // Element größer als alle im Knoten
+                // element größer als alle im Knoten
                 if &content.len() < &self.max {
                     content.push( element);
-                    let mut new_tmp = Node::LeafNode {content: content, l_ref: l_ref, r_ref: r_ref};
+                    let mut new_tmp = Node::LeafNode {content, l_ref, r_ref };
                     let tmp_block = Block::to_block(&mut new_tmp);
                     self.bfa.update(given, tmp_block).expect("error b_tree_insert");
                     Ok(())
                 }
                 else {
                     self.split_leaf(element.clone(), passed, element.data.clone());
-                    //self.split_node(Some(element.clone()), None, &mut passed, element.data);
+                    //self.split_Node(Some(element.clone()), None, &mut passed, element.data);
                     Ok(())
                 }
             }
@@ -372,7 +243,7 @@ impl BTree {
                 tmp_el.comp = element.comp.clone();
                 passed.push(tmp_el.id);
                 content.push(tmp_el);
-                let mut new_tmp: Node<T, V> = Node::InnerNode{content: content};
+                let mut new_tmp: Node<T, V> = Node::InnerNode{content };
                 let tmp_block = Block::to_block(&mut new_tmp);
                 self.bfa.update(given, tmp_block).expect("error btree b_tree_insert");
                 return self.b_tree_insert(element,tmp_el.id, passed);
@@ -383,13 +254,14 @@ impl BTree {
     fn split_leaf <T, V> (&mut self, leaf_element: LeafElement<T, V>, mut passed: Vec<usize>, data: V)
         where T: Serialize + DeserializeOwned + Debug + Ord + Copy + Clone,
               V: Serialize + DeserializeOwned + Debug + Sized + Clone {
+
         let current_id = passed.pop().unwrap();
         let tmp: Node<T, V> = Node::from_block(&mut self.bfa.get(current_id).unwrap());
         let mut b = false;
         match tmp {
             Node::LeafNode {mut content, l_ref, mut r_ref} => {
                 let comp = leaf_element.clone().comp;
-                for i in 0..content.len() {         //sort ids of current node Todo effizient (bubble sort ? ...)
+                for i in 0..content.len() {
                     if comp < content.get(i).unwrap().comp {
                         content.insert(i, leaf_element.clone());
                         b = true;
@@ -400,23 +272,28 @@ impl BTree {
                     content.push( leaf_element);
                 }
 
-                let second_half = content.split_off((content.len() / 2) as usize); //ToDo not important(also check to use mult instead of div for efficiency)
-                //neue Node
+                let second_half = content.split_off((content.len() / 2) as usize);
+                //new Node
                 let parent_comp = second_half.last().expect("error split leaf").comp;
                 //update second half
-                let mut tmp_node2 = Node::LeafNode{content: second_half, l_ref: current_id as i64, r_ref: r_ref};   //-> right node; tmp -> left node
+                let mut tmp_node2 = Node::LeafNode{content: second_half, l_ref: Some(current_id), r_ref: r_ref};   //-> right Node; tmp -> left Node
                 let node2_id = self.bfa.reserve();
                 let block2 = Block::to_block(&mut tmp_node2);
                 self.bfa.update(node2_id, block2).expect("error btree split leaf");
-                //update right neighbor
-                if !r_ref < 0 {
-                    let mut right_neighbor: Node<T, V> = Node::from_block(&mut self.bfa.get(r_ref as usize).unwrap());
-                    right_neighbor.set_lref(node2_id as i64);
-                    let block = Block::to_block(&mut right_neighbor);
-                    self.bfa.update(r_ref as usize, block).expect("error btree split leaf");
+
+                //update right neighbor if exists
+                match r_ref {
+                    Some(id_of_right_neighbor)=>{
+                        let mut right_neighbor: Node<T, V> = Node::from_block(&mut self.bfa.get(id_of_right_neighbor ).unwrap());
+                        right_neighbor.set_lref(Some(node2_id));
+                        let block = Block::to_block(&mut right_neighbor);
+                        self.bfa.update(id_of_right_neighbor , block).expect("error btree split leaf");
+                    }
+                    None=>()
+
                 }
                 //update first half
-                r_ref = node2_id as i64;
+                r_ref = Some(node2_id);
                 let mut new_tmp = Node::LeafNode {content: content.clone(), l_ref: l_ref, r_ref: r_ref};
                 let block1 = Block::to_block(&mut new_tmp);
                 self.bfa.update(current_id, block1).expect("error btree split leaf");
@@ -431,14 +308,14 @@ impl BTree {
                         self.split_inner(new_el_for_parent, passed, data.clone());
                     }
                 }
-                else { //make new root-node
+                else { //make new root-Node
                     let el2_for_root = InnerElement::new(tmp_node2.get_leaf_content().unwrap().last().unwrap().comp, node2_id);
                     let el1_for_root = InnerElement::new(content.last().unwrap().comp, current_id);
                     self.new_root(el1_for_root, el2_for_root, data.clone(), current_id);
                 }
             }
             _ => {
-                println!("Something went wrong splitting node {}", current_id);
+                println!("Node {}, was not a LeafNode -> should not happen as LeafNode refs only point to other LeafNodes", current_id); //TODO passed contains Inner -> tests split
             }
         }
     }
@@ -451,7 +328,7 @@ impl BTree {
         let mut b = false;
         match tmp {
             Node::InnerNode {mut content} => {
-                for i in 0..content.len() {         //sort ids of current node Todo effizient (bubble sort ? ...)
+                for i in 0..content.len() {
                     if &inner_element.comp < &content.get(i).unwrap().comp {
                         content.insert(i, inner_element);
                         b = true;
@@ -462,7 +339,7 @@ impl BTree {
                     content.push( inner_element);
                 }
 
-                let second_half = content.split_off((content.len() / 2) as usize); //ToDo (also check to use mult instead of div for efficiency)
+                let second_half = content.split_off((content.len() / 2) as usize); //check to use mult instead of div for efficiency)
                 //neue Node
                 let mut tmp_node2: Node<T, V> = Node::InnerNode{content: second_half};
                 let node2_id = self.bfa.reserve();
@@ -481,14 +358,14 @@ impl BTree {
                         self.split_inner(new_el_for_parent, passed, data.clone());
                     }
                 }
-                else { //make new root-node
+                else { //make new root-Node
                     let el2_for_root = InnerElement::new(tmp_node2.get_inner_content().unwrap().last().unwrap().comp, node2_id);
                     let el1_for_root = InnerElement::new(content.last().unwrap().comp, current_id);
                     self.new_root(el1_for_root, el2_for_root, data.clone(), current_id);
                 }
             }
             _ => {
-                println!("Something went wrong splitting node {}", current_id);
+                println!("Something went wrong splitting Node {}", current_id);
             }
         }
     }
@@ -539,7 +416,7 @@ impl BTree {
                     }
                     let mut new_tmp: Node<T, V> = Node::InnerNode {content};
                     let block = Block::to_block(&mut new_tmp);
-                    self.bfa.update(id,block).expect("error btree insert into node");
+                    self.bfa.update(id,block).expect("error btree insert into Node");
                     return true
                 }
                 else {
@@ -552,17 +429,27 @@ impl BTree {
         }
     }
 
-    //Print the Structure of Tree for Debugging -> x is a Decoy Element to Determine the Type of Data -> surely a more elegant solution exists
-    pub fn print<T, V>(&mut self, x : &T, data: V)
-        where T: Serialize + DeserializeOwned + Debug + Ord + Copy + Clone,
-              V: Serialize + DeserializeOwned + Debug + Sized + Clone {
-        self.print_tree_structure(x, self.root_id, data);
+    //Print the Structure of Tree for Debugging -> starting_point can be any existing id
+    // Turbofish notation
+    // Give a Node id Some(id) as arbitrary start Point or None to start at root
+    pub fn print<T, V>(&mut self, _starting_point: Option<T>)
+            where T: Serialize + DeserializeOwned + Debug + Ord + Copy + Clone,
+                  V: Serialize + DeserializeOwned + Debug + Sized + Clone {
+        /*TODO Idea:
+        match starting_point {
+            Some(id)=>self.print_tree_structure::<T, V>(id),
+            None=>self.print_tree_structure::<T, V>(self.root_id)
+        }
+        TODO but root_id is usize not T and is initialized from metadata file => parse from metadata with match type { "usize"=> parse::<usize> ...
+        */
+        self.print_tree_structure::<T, V>(self.root_id);
         println!();
     }
 
-    fn print_tree_structure<T, V>(&mut self, x : &T, given: usize, data: V)
+    fn print_tree_structure<T, V>(&mut self, given: usize)
         where T: Serialize + DeserializeOwned + Debug + Ord + Copy + Clone,
               V: Serialize + DeserializeOwned + Debug + Sized + Clone {
+
         println!();
         let tmp: Node<T, V> = Node::from_block(&mut self.bfa.get(given).unwrap());
         print!("id: {:?} - ", given);
@@ -589,7 +476,7 @@ impl BTree {
                 }
                 print!("]");
                 for i in &content {
-                    self.print_tree_structure(x,i.id, data.clone());
+                    self.print_tree_structure::<T, V>(i.id);
                 }
             }
         }
@@ -653,14 +540,14 @@ impl BTree {
     fn join_node<T, V>(&mut self, key: T, given: usize, mut passed: Vec<usize>, data: V)
         where T: Serialize + DeserializeOwned + Debug + Ord + Copy + Clone,
               V: Serialize + DeserializeOwned + Debug + Sized + Clone {
-        let parent_id = passed.pop().expect("join node error");
+        let parent_id = passed.pop().expect("join Node error");
         let mut underflow: Node<T, V> = Node::from_block(&mut self.bfa.get(given).unwrap());
         let mut parent: Node<T, V> = Node::from_block(&mut self.bfa.get(parent_id).unwrap());
         let mut right = true;
         let mut neighbor_index_in_parent: usize = 0;
-        let parent_content = parent.get_inner_content().expect("error join node");
+        let parent_content = parent.get_inner_content().expect("error join Node");
         for i in 0..parent_content.len() {
-            if given == parent_content.get(i).expect("join node error").id {
+            if given == parent_content.get(i).expect("join Node error").id {
                 if i == parent_content.len() - 1 {
                     neighbor_index_in_parent = i - 1;
                     right = false;
@@ -670,7 +557,7 @@ impl BTree {
                 break;
             }
         }
-        let neighbor_block_id = parent_content.get_mut(neighbor_index_in_parent).expect("error join node").id;
+        let neighbor_block_id = parent_content.get_mut(neighbor_index_in_parent).expect("error join Node").id;
         let neighbor: Node<T, V> = Node::from_block(&mut self.bfa.get(neighbor_block_id).unwrap());
         match neighbor {
             Node::LeafNode {content, l_ref, r_ref} => {
@@ -688,7 +575,7 @@ impl BTree {
                     }
                 }
                 else {
-                    let underflow_content = underflow.get_leaf_content().expect("error join node");
+                    let underflow_content = underflow.get_leaf_content().expect("error join Node");
                     //underflow und neighbor können verschmolzen werden
                     if underflow_content.len() + content.len() <= self.max {
                         //neighbor ist rechts
@@ -730,7 +617,7 @@ impl BTree {
                     }
                 }
                 else {
-                    let underflow_content = underflow.get_inner_content().expect("error join node");
+                    let underflow_content = underflow.get_inner_content().expect("error join Node");
                     //underflow und neighbor können verschmolzen werden
                     if underflow_content.len() + content.len() <= self.max {
                         //neighbor ist rechts
@@ -763,7 +650,7 @@ impl BTree {
     fn fix_parent<T, V>(&mut self, mut parent: Node<T, V>, parent_id: usize, neighbor_block_id: usize, neighbor_index_in_parent: usize, passed: Vec<usize>, data: V, right: bool, mut key: T)
         where T: Serialize + DeserializeOwned + Debug + Ord + Copy + Clone,
               V: Serialize + DeserializeOwned + Debug + Sized + Clone {
-        let parent_content = parent.get_inner_content().expect("error join node");
+        let parent_content = parent.get_inner_content().expect("error join Node");
         if right {
             parent_content.remove(neighbor_index_in_parent - 1 );
             let parent_content_len = parent_content.len();
@@ -771,9 +658,9 @@ impl BTree {
             self.bfa.update(parent_id, block2).expect("error btree fix parent");
             if parent_content_len < self.max / 2 as usize {
                 if !passed.is_empty() {
-                    let parent_parent_id = passed.last().expect("node join error parent parent").clone();
+                    let parent_parent_id = passed.last().expect("Node join error parent parent").clone();
                     let mut parent_parent: Node<T, V> = Node::from_block(&mut self.bfa.get(parent_parent_id).unwrap());
-                    let parent_parent_content = parent_parent.get_inner_content().expect("error join node");
+                    let parent_parent_content = parent_parent.get_inner_content().expect("error join Node");
                     for i in parent_parent_content {
                         if i.id == parent_id {
                             key = i.comp.clone();
@@ -784,7 +671,7 @@ impl BTree {
                 }
                 if parent_id == self.root_id && parent_content_len < 2 {
                     let mut new_parent: Node<T, V> = Node::from_block(&mut self.bfa.get(parent_id).unwrap());
-                    if new_parent.get_inner_content().expect("error join node").len() < 2 {
+                    if new_parent.get_inner_content().expect("error join Node").len() < 2 {
                         self.set_root(neighbor_block_id);
                     }
                 }
@@ -797,9 +684,9 @@ impl BTree {
             self.bfa.update(parent_id, block2).expect("error btree fix parent");
             if parent_content_len < self.max / 2 as usize {
                 if !passed.is_empty() {
-                    let parent_parent_id = passed.last().expect("node join error parent parent").clone();
+                    let parent_parent_id = passed.last().expect("Node join error parent parent").clone();
                     let mut parent_parent: Node<T, V> = Node::from_block(&mut self.bfa.get(parent_parent_id).unwrap());
-                    let parent_parent_content = parent_parent.get_inner_content().expect("error join node");
+                    let parent_parent_content = parent_parent.get_inner_content().expect("error join Node");
                     for i in parent_parent_content {
                         if i.id == parent_id {
                             key = i.comp.clone();
@@ -810,7 +697,7 @@ impl BTree {
                 }
                 if parent_id == self.root_id && parent_content_len < 2 {
                     let mut new_parent: Node<T, V> = Node::from_block(&mut self.bfa.get(parent_id).unwrap());
-                    if new_parent.get_inner_content().expect("error join node").len() < 2 {
+                    if new_parent.get_inner_content().expect("error join Node").len() < 2 {
                         self.set_root(neighbor_block_id);
                     }
                 }
@@ -818,33 +705,42 @@ impl BTree {
         }
     }
 
-    fn join_leaf<T, V>(&mut self, mut underflow: Node<T, V>, mut content: Vec<LeafElement<T, V>>, mut l_ref: i64, r_ref: i64, id_for_neighbor: usize, right: bool)
+    fn join_leaf<T, V>(&mut self, mut underflow: Node<T, V>, mut content: Vec<LeafElement<T, V>>, mut l_ref: Option<usize>, r_ref: Option<usize>, id_for_neighbor: usize, right: bool)
         where T: Serialize + DeserializeOwned + Debug + Ord + Copy + Clone,
               V: Serialize + DeserializeOwned + Debug + Sized + Clone {
-        let underflow_content = underflow.get_leaf_content().expect("error join node");
+
+        let underflow_content = underflow.get_leaf_content().expect("error join Node");
         if right {
             underflow_content.extend(content);
             content = underflow_content.clone();
-            l_ref = underflow.get_lref().expect("error join node");
-            if l_ref != -1 {
-                let mut other_neighbor: Node<T, V> = Node::from_block(&mut self.bfa.get(l_ref as usize).unwrap());
-                other_neighbor.set_rref(id_for_neighbor as i64);
-                let block = Block::to_block(&mut other_neighbor);
-                self.bfa.update(l_ref as usize, block).expect("error btree join leaf");
+            l_ref = underflow.get_lref();
+
+            match l_ref {   //set left Neighbors rref to the new, merged Node
+                Some(left_ref)=> {
+                    let mut other_neighbor: Node<T, V> = Node::from_block(&mut self.bfa.get(left_ref).unwrap());
+                    other_neighbor.set_rref(Some(id_for_neighbor));
+                    let block = Block::to_block(&mut other_neighbor);
+                    self.bfa.update(left_ref, block).expect("error btree join leaf");
+                },
+                None=>()
             }
-            let mut new_neighbor = Node::LeafNode {content: content, l_ref: l_ref, r_ref: r_ref};
+
+            let mut new_neighbor = Node::LeafNode {content, l_ref, r_ref };
             let block1 = Block::to_block(&mut new_neighbor);
             self.bfa.update(id_for_neighbor, block1).expect("error btree join leaf");
         }
-        else {
+        else {  //Set right Neighbors lref to new, merged Node
             content.extend(underflow_content.clone());
             underflow.set_leaf_content(content.clone());
             underflow.set_lref(l_ref);
-            if l_ref != -1 {
-                let mut other_neighbor: Node<T, V> = Node::from_block(&mut self.bfa.get(l_ref as usize).unwrap());
-                other_neighbor.set_rref(id_for_neighbor as i64);
-                let block = Block::to_block(&mut other_neighbor);
-                self.bfa.update(l_ref as usize, block).expect("error btree join leaf");
+            match l_ref {                       //TODO THis cant be right -> should check r_ref and set right neighbors l_ref to new merged Node -> not the l_ref in the Signature? -> Test a join Node with left Neighbor
+                Some(left_ref)=> {
+                    let mut other_neighbor: Node<T, V> = Node::from_block(&mut self.bfa.get(left_ref).unwrap());
+                    other_neighbor.set_rref(Some(id_for_neighbor));
+                    let block = Block::to_block(&mut other_neighbor);
+                    self.bfa.update(left_ref, block).expect("error btree join leaf");
+                },
+                None=>()
             }
             let block1 = Block::to_block(&mut underflow);
             self.bfa.update(id_for_neighbor, block1).expect("error btree join leaf");
@@ -854,12 +750,12 @@ impl BTree {
     fn join_inner<T, V>(&mut self, mut underflow: Node<T, V>, mut content: Vec<InnerElement<T>>, id_for_neighbor: usize, right: bool)
         where T: Serialize + DeserializeOwned + Debug + Ord + Copy + Clone,
               V: Serialize + DeserializeOwned + Debug + Sized + Clone {
-        let underflow_content = underflow.get_inner_content().expect("error join node");
+        let underflow_content = underflow.get_inner_content().expect("error join Node");
 
         if right {
             underflow_content.extend(content);
             content = underflow_content.clone();
-            let mut new_neighbor: Node<T, V> = Node::InnerNode {content: content};
+            let mut new_neighbor: Node<T, V> = Node::InnerNode {content };
             let block1 = Block::to_block(&mut new_neighbor);
             self.bfa.update(id_for_neighbor, block1).expect("error btree join inner");
         }
@@ -871,7 +767,7 @@ impl BTree {
         }
     }
 
-    fn fill_leaf<T, V>(&mut self, mut underflow: Node<T, V>, mut content: Vec<LeafElement<T, V>>, l_ref: i64, r_ref: i64, mut parent: Node<T, V>, given: usize, neighbor_block_id: usize, parent_id: usize,neighbor_index_in_parent: usize, right: bool)
+    fn fill_leaf<T, V>(&mut self, mut underflow: Node<T, V>, mut content: Vec<LeafElement<T, V>>, l_ref: Option<usize>, r_ref: Option<usize>, mut parent: Node<T, V>, given: usize, neighbor_block_id: usize, parent_id: usize, neighbor_index_in_parent: usize, right: bool)
         where T: Serialize + DeserializeOwned + Debug + Ord + Copy + Clone,
               V: Serialize + DeserializeOwned + Debug + Sized + Clone {
         let parent_content = parent.get_inner_content().expect("error fill leaf");
@@ -883,21 +779,21 @@ impl BTree {
                 content.remove(0);
                 underflow_content.push(a);
             }
-            let comp = underflow_content.last().expect("error join node").comp.clone();
-            parent_content.get_mut(neighbor_index_in_parent-1).expect("error fill leaf").comp = comp;
+            let comp = underflow_content.last().expect("error join Node").comp.clone();
+            parent_content.get_mut(neighbor_index_in_parent-1).unwrap().comp = comp;
 
         }
         else {
-            let underflow_content = underflow.get_leaf_content().expect("error fill leaf");
+            let underflow_content = underflow.get_leaf_content().unwrap();
             while underflow_content.len() < self.max / 2 as usize {
-                let a = content.pop().expect("error fill leaf");
+                let a = content.pop().unwrap();
                 underflow_content.insert(0, a);
             }
-            let comp = content.last().expect("error join node").comp.clone();
-            parent_content.get_mut(neighbor_index_in_parent).expect("error fill leaf").comp = comp;
+            let comp = content.last().unwrap().comp.clone();
+            parent_content.get_mut(neighbor_index_in_parent).unwrap().comp = comp;
         }
 
-        let mut new_neighbor = Node::LeafNode {content: content, l_ref: l_ref, r_ref: r_ref};
+        let mut new_neighbor = Node::LeafNode {content, l_ref, r_ref };
         let block1 = Block::to_block(&mut underflow);
         let block2 = Block::to_block(&mut new_neighbor);
         let block3 = Block::to_block(&mut parent);
@@ -906,7 +802,7 @@ impl BTree {
         self.bfa.update(parent_id, block3).expect("error fill leaf");
     }
 
-    fn fill_inner<T, V>(&mut self, mut underflow: Node<T, V>, mut content: Vec<InnerElement<T>>, mut parent: Node<T, V>, given: usize, neighbor_block_id: usize, parent_id: usize,neighbor_index_in_parent: usize, right: bool)
+    fn fill_inner<T, V>(&mut self, mut underflow: Node<T, V>, mut content: Vec<InnerElement<T>>, mut parent: Node<T, V>, given: usize, neighbor_block_id: usize, parent_id: usize, neighbor_index_in_parent: usize, right: bool)
         where T: Serialize + DeserializeOwned + Debug + Ord + Copy + Clone,
               V: Serialize + DeserializeOwned + Debug + Sized + Clone {
         let parent_content = parent.get_inner_content().expect("error fill inner");
@@ -918,7 +814,7 @@ impl BTree {
                 underflow_content.push(a);
             }
             let comp = underflow_content.last().expect("error fill inner").comp.clone();
-            parent_content.get_mut(neighbor_index_in_parent-1).expect("error join node").comp = comp;
+            parent_content.get_mut(neighbor_index_in_parent-1).expect("error join Node").comp = comp;
         }
         else {
             while underflow_content.len() < self.max / 2 as usize {
