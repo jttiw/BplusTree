@@ -1,7 +1,9 @@
 # BplusTree
 B+ Tree Implementation in Rust with BlockFileAccess
 
-Operations supported:
+<span style="color:red">
+	Operations supported:
+</span>
 1. Search
 2. Interval_search
 3. Insert
