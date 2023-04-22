@@ -29,7 +29,7 @@ mod btree_tests{
             let student = Student::new("Witt", "Jonathan", i as usize);
             btree.insert(i ,  student).unwrap();
         }
-        let students: Vec<Student> = btree.search_interval(0 , 99 ).unwrap();
+        let students: Vec<Student> = btree.interval_search(0, 99 ).unwrap();
         for i in 0..100 {
             assert_eq!(students[i].matrikelnr, i);
         }
@@ -59,7 +59,7 @@ mod btree_tests{
             let student = Student::new("Witt", "Jonathan", i as usize);
             btree.insert(i ,  student).unwrap();
         }
-        let students:Option<Vec<Student>> = btree.search_interval(5 , 4 );
+        let students:Option<Vec<Student>> = btree.interval_search(5, 4 );
         assert_eq!(students.is_none(),true);
         btree.close();
     }
@@ -277,7 +277,7 @@ mod btree_tests{
 
             }
         }
-        let students: Vec<Student> = btree.search_interval(0 as usize, 50 as usize).unwrap();
+        let students: Vec<Student> = btree.interval_search(0 as usize, 50 as usize).unwrap();
         for i in 0..students.len() {
             assert_ne!(students[i].matrikelnr % 3, 0);
         }

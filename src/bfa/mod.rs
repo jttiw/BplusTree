@@ -208,7 +208,7 @@ impl BFA {
         }
     }
 
-    //creates updatefile and metadata
+    //creates updatefile and metadata TODO dont create new files on successive access
     pub fn close(& mut self) -> Result<(), Box<dyn Error>> {
         self.file.flush().expect("error bfa close");
         self.reserve_map.clear();

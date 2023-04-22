@@ -14,13 +14,14 @@ Test BFA more
 
 #DOCs
 Tree has Inner Nodes and Leaf Nodes
-Nodes have their own ID a Vector of Elements
+Nodes have their own ID (ID is assigned via bfa.reserve) and a Vector of Elements
 ELemente
 
 every Node is a block (i think)
 
 
-Allgemein 
+#Allgemein 
+Alt arrow keys to move back/forth after Go-to ...
 learn Intellij Key-Bindings
 
 Rust shorthand println!("{:?}", x)
